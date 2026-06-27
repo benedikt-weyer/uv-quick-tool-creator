@@ -1,6 +1,5 @@
-def main():
-    print("Hello from uv-quick-tool-creator!")
+from uv_quick_tool_creator.cli import main
 
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main())

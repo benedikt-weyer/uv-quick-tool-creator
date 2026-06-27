@@ -1,0 +1,8 @@
+tools_directory: ~/Git/tools
+editor_command: code
+editor_args:
+  - -n
+author_from: auto
+build_backend: uv
+python: null
+vcs: git

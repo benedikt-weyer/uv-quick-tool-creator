@@ -1,2 +1,71 @@
 # uv-quick-tool-creator
-uv-quick-tool-creator
+
+`uv-quick-tool-creator` creates new installable `uv` tool projects. It drives `uv init --package --app`, writes a `flake.nix` and `.envrc` into the generated project, and then opens the project in a configurable editor. The default editor is VS Code via `code -n`.
+
+## Install
+
+Install it as a uv-managed tool from this repository:
+
+```bash
+uv tool install /home/benedikt/Git/uv-quick-tool-creator
+```
+
+From the repository root, this is equivalent:
+
+```bash
+uv tool install .
+```
+
+## Configure
+
+Write a default config file:
+
+```bash
+uv-quick-tool-creator init-config
+```
+
+That writes `~/.config/uv-quick-tool-creator/config.yaml`. An example config is included in [uv-quick-tool-creator.example.yaml](/home/benedikt/Git/uv-quick-tool-creator/uv-quick-tool-creator.example.yaml).
+
+Example:
+
+```yaml
+tools_directory: ~/Git/tools
+editor_command: code
+editor_args:
+	- -n
+author_from: auto
+build_backend: uv
+python: null
+vcs: git
+```
+
+`tools_directory` controls where new tool projects are created by default. `editor_command` and `editor_args` control how the new project is opened after setup.
+
+## Usage
+
+Create a new tool project in `tools_directory/<name>` and open it in VS Code:
+
+```bash
+uv-quick-tool-creator create my-new-tool --description "My new uv tool"
+```
+
+Create a project at an explicit path:
+
+```bash
+uv-quick-tool-creator create my-new-tool --path ~/work/my-new-tool
+```
+
+Create a project without opening an editor:
+
+```bash
+uv-quick-tool-creator create my-new-tool --no-open
+```
+
+The generated project is created with `uv init --package --app --no-workspace`, includes an installable script entry from `uv init`, and also gets:
+
+```text
+flake.nix
+.envrc
+```
+
+The `.envrc` uses `use flake path:./`, which works cleanly with uncommitted local flakes.

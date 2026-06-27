@@ -1,7 +1,17 @@
 [project]
 name = "uv-quick-tool-creator"
 version = "0.1.0"
-description = "Add your description here"
+description = "Create installable uv tool projects from a YAML-configured template"
 readme = "README.md"
 requires-python = ">=3.14"
-dependencies = []
+dependencies = [
+	"pydantic>=2.11.7,<3",
+	"PyYAML>=6.0.2,<7",
+]
+
+[project.scripts]
+uv-quick-tool-creator = "uv_quick_tool_creator.cli:main"
+
+[build-system]
+requires = ["uv_build>=0.11.22,<0.12.0"]
+build-backend = "uv_build"
