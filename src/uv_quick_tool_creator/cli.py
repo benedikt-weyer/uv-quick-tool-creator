@@ -12,7 +12,7 @@ from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_serial
 DEFAULT_CONFIG_PATH = Path.home() / ".config" / "uv-quick-tool-creator" / "config.yaml"
 
 FLAKE_TEMPLATE = """{
-  description = \"Development shell for {project_name}\";
+    description = \"Development shell for __PROJECT_NAME__\";
 
   inputs = {
     nixpkgs.url = \"github:NixOS/nixpkgs/nixos-unstable\";
@@ -154,7 +154,7 @@ def write_config(path: Path, config: AppConfig, force: bool) -> int:
         raise SystemExit(f"Config file already exists: {config_path}. Use --force to overwrite it.")
 
     config_path.parent.mkdir(parents=True, exist_ok=True)
-    dumped = yaml.safe_dump(config.model_dump(mode="json", exclude_none=True), sort_keys=False)
+    dumped = yaml.safe_dump(config.model_dump(mode="json", exclude_none=False), sort_keys=False)
     config_path.write_text(dumped, encoding="utf-8")
     print(f"Wrote config to {config_path}")
     return 0
@@ -208,7 +208,7 @@ def create_project(name: str, description: str, path: Path | None, config: AppCo
 
 def write_flake(project_dir: Path, project_name: str) -> None:
     flake_path = project_dir / "flake.nix"
-    flake_path.write_text(FLAKE_TEMPLATE.format(project_name=project_name), encoding="utf-8")
+    flake_path.write_text(FLAKE_TEMPLATE.replace("__PROJECT_NAME__", project_name), encoding="utf-8")
 
 
 def write_envrc(project_dir: Path) -> None:
