@@ -16,6 +16,20 @@ From the repository root, this is equivalent:
 uv tool install .
 ```
 
+On NixOS, prefer an explicit Nix-provided Python so `uv` does not select a downloaded generic Linux interpreter:
+
+```bash
+uv tool install --python "$(command -v python)" .
+```
+
+If you want that behavior globally for tool installs, you can also use:
+
+```bash
+UV_NO_MANAGED_PYTHON=1 uv tool install .
+```
+
+This avoids the `Could not start dynamically linked executable` failure from a uv-managed Python under `~/.local/share/uv/python`.
+
 ## Configure
 
 Write a default config file:
