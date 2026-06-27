@@ -22,6 +22,18 @@ On NixOS, prefer an explicit Nix-provided Python so `uv` does not select a downl
 uv tool install --python "$(command -v python)" .
 ```
 
+This repository also includes a shell installer that finds a Nix-store Python and uses it automatically:
+
+```bash
+sh ./install-nixos.sh
+```
+
+To reinstall over an existing tool install:
+
+```bash
+sh ./install-nixos.sh --force
+```
+
 If you want that behavior globally for tool installs, you can also use:
 
 ```bash
