@@ -105,6 +105,12 @@ Create a project without opening an editor:
 uv-quick-tool-creator create my-new-tool --no-open
 ```
 
+Start an interactive shell with Tab completion for commands, options, and local tool names:
+
+```bash
+uv-quick-tool-creator interactive
+```
+
 Install a generated local tool project into `uv tool`:
 
 ```bash

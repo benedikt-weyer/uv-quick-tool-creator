@@ -1,11 +1,15 @@
 from __future__ import annotations
 
 import argparse
+import shlex
 import subprocess
 import sys
 from pathlib import Path
 from typing import Any, Literal
 
+from prompt_toolkit import PromptSession
+from prompt_toolkit.completion import Completer, Completion
+from prompt_toolkit.history import InMemoryHistory
 import yaml
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_serializer, field_validator
 
@@ -45,6 +49,19 @@ FLAKE_TEMPLATE = """{
 """
 
 ENVRC_CONTENT = "use flake path:./\n"
+INTERACTIVE_META_COMMANDS = ("help", "exit", "quit")
+COMMAND_OPTIONS: dict[str, tuple[str, ...]] = {
+    "init-config": ("--path", "--force"),
+    "create": ("--description", "--path", "--no-open"),
+    "install": ("--path", "--editable", "--force"),
+    "update": ("--path", "--editable"),
+    "edit": ("--path",),
+    "list": ("--paths",),
+}
+
+
+class CliError(Exception):
+    pass
 
 
 class AppConfig(BaseModel):
@@ -82,10 +99,56 @@ class AppConfig(BaseModel):
         return str(value)
 
 
-def build_parser() -> argparse.ArgumentParser:
+class InteractiveCompleter(Completer):
+    def __init__(self, config_path: Path):
+        self.config_path = config_path.expanduser()
+
+    def get_completions(self, document: Any, complete_event: Any) -> Any:
+        del complete_event
+        text = document.text_before_cursor
+        stripped = text.lstrip()
+        ends_with_space = text.endswith(" ")
+        parts = stripped.split()
+
+        if not parts:
+            yield from self._complete_commands("")
+            return
+
+        if len(parts) == 1 and not ends_with_space:
+            yield from self._complete_commands(parts[0])
+            return
+
+        command = parts[0]
+        if command in INTERACTIVE_META_COMMANDS:
+            return
+
+        current = "" if ends_with_space else parts[-1]
+        completed_args = parts[1:] if ends_with_space else parts[1:-1]
+
+        if command in {"install", "update", "edit", "uninstall"} and len(completed_args) == 0 and not current.startswith("--"):
+            yield from self._complete_tool_names(current)
+            return
+
+        for option in COMMAND_OPTIONS.get(command, ()): 
+            if option.startswith(current):
+                yield Completion(option, start_position=-len(current))
+
+    def _complete_commands(self, prefix: str) -> Any:
+        for command in [*COMMAND_OPTIONS.keys(), "uninstall", "interactive", *INTERACTIVE_META_COMMANDS]:
+            if command.startswith(prefix):
+                yield Completion(command, start_position=-len(prefix))
+
+    def _complete_tool_names(self, prefix: str) -> Any:
+        for tool_name in get_local_tool_names(load_config(self.config_path)):
+            if tool_name.startswith(prefix):
+                yield Completion(tool_name, start_position=-len(prefix))
+
+
+def build_parser(exit_on_error: bool = True) -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="uv-quick-tool-creator",
         description="Create packaged uv tool projects with a configurable dev shell.",
+        exit_on_error=exit_on_error,
     )
     parser.add_argument(
         "--config",
@@ -180,6 +243,8 @@ def build_parser() -> argparse.ArgumentParser:
         help="Show the project path for each tool.",
     )
 
+    subparsers.add_parser("interactive", help="Start an interactive shell with command autocompletion.")
+
     return parser
 
 
@@ -192,18 +257,18 @@ def load_config(path: Path) -> AppConfig:
     if raw_data is None:
         raw_data = {}
     if not isinstance(raw_data, dict):
-        raise SystemExit(f"Config file must contain a YAML mapping: {config_path}")
+        raise CliError(f"Config file must contain a YAML mapping: {config_path}")
 
     try:
         return AppConfig.model_validate(raw_data)
     except ValidationError as exc:
-        raise SystemExit(f"Invalid config file {config_path}:\n{exc}") from exc
+        raise CliError(f"Invalid config file {config_path}:\n{exc}") from exc
 
 
 def write_config(path: Path, config: AppConfig, force: bool) -> int:
     config_path = path.expanduser()
     if config_path.exists() and not force:
-        raise SystemExit(f"Config file already exists: {config_path}. Use --force to overwrite it.")
+        raise CliError(f"Config file already exists: {config_path}. Use --force to overwrite it.")
 
     config_path.parent.mkdir(parents=True, exist_ok=True)
     dumped = yaml.safe_dump(config.model_dump(mode="json", exclude_none=False), sort_keys=False)
@@ -220,18 +285,28 @@ def resolve_project_dir(name: str, path: Path | None, config: AppConfig) -> Path
 
 def ensure_project_dir(project_dir: Path) -> None:
     if not project_dir.exists():
-        raise SystemExit(f"Project directory does not exist: {project_dir}")
+        raise CliError(f"Project directory does not exist: {project_dir}")
     if not project_dir.is_dir():
-        raise SystemExit(f"Project path is not a directory: {project_dir}")
+        raise CliError(f"Project path is not a directory: {project_dir}")
     if not (project_dir / "pyproject.toml").exists():
-        raise SystemExit(f"Project directory does not contain pyproject.toml: {project_dir}")
+        raise CliError(f"Project directory does not contain pyproject.toml: {project_dir}")
 
 
 def run_command(command: list[str]) -> None:
     try:
         subprocess.run(command, check=True)
     except subprocess.CalledProcessError as exc:
-        raise SystemExit(exc.returncode) from exc
+        raise CliError(f"Command failed with exit code {exc.returncode}: {' '.join(command)}") from exc
+
+
+def get_local_tool_names(config: AppConfig) -> list[str]:
+    tools_root = config.tools_directory
+    if not tools_root.exists():
+        return []
+
+    return sorted(
+        path.name for path in tools_root.iterdir() if path.is_dir() and (path / "pyproject.toml").exists()
+    )
 
 
 def get_installed_tool_names() -> set[str]:
@@ -252,9 +327,7 @@ def list_tools(config: AppConfig, show_paths: bool) -> None:
         return
 
     installed_tools = get_installed_tool_names()
-    tool_dirs = sorted(
-        path for path in tools_root.iterdir() if path.is_dir() and (path / "pyproject.toml").exists()
-    )
+    tool_dirs = [tools_root / tool_name for tool_name in get_local_tool_names(config)]
 
     if not tool_dirs:
         print(f"No tools found in {tools_root}")
@@ -269,11 +342,79 @@ def list_tools(config: AppConfig, show_paths: bool) -> None:
         print(line)
 
 
+def create_interactive_session(config_path: Path, session: Any | None) -> Any:
+    if session is not None:
+        return session
+
+    return PromptSession(
+        completer=InteractiveCompleter(config_path),
+        complete_while_typing=True,
+        history=InMemoryHistory(),
+    )
+
+
+def print_interactive_help() -> None:
+    print("Commands: create, install, update, edit, uninstall, list, init-config, help, exit, quit")
+
+
+def run_interactive_command(command_line: str, config_path: Path, parser: argparse.ArgumentParser) -> None:
+    try:
+        command_argv = shlex.split(command_line)
+    except ValueError as exc:
+        print(f"Invalid command: {exc}")
+        return
+
+    if command_argv[0] == "interactive":
+        print("Already in interactive mode.")
+        return
+    if any(token in {"-h", "--help"} for token in command_argv):
+        print("Use `help` in interactive mode.")
+        return
+
+    try:
+        args = parser.parse_args(["--config", str(config_path), *command_argv])
+    except argparse.ArgumentError as exc:
+        print(f"Invalid command: {exc}")
+        return
+
+    try:
+        dispatch_command(args)
+    except CliError as exc:
+        print(exc)
+
+
+def run_interactive(config_path: Path, session: Any | None = None) -> None:
+    interactive_session = create_interactive_session(config_path, session)
+    parser = build_parser(exit_on_error=False)
+
+    print("Interactive mode. Press Tab for completions, type help for commands, and exit or Ctrl-D to quit.")
+    while True:
+        try:
+            raw_command = interactive_session.prompt("uv-quick-tool-creator> ")
+        except EOFError:
+            print()
+            return
+        except KeyboardInterrupt:
+            print()
+            continue
+
+        command_line = raw_command.strip()
+        if not command_line:
+            continue
+        if command_line in {"exit", "quit"}:
+            return
+        if command_line == "help":
+            print_interactive_help()
+            continue
+
+        run_interactive_command(command_line, config_path, parser)
+
+
 def create_project(name: str, description: str, path: Path | None, config: AppConfig, open_in_editor: bool) -> int:
     project_dir = resolve_project_dir(name, path, config)
 
     if project_dir.exists() and any(project_dir.iterdir()):
-        raise SystemExit(f"Target directory already exists and is not empty: {project_dir}")
+        raise CliError(f"Target directory already exists and is not empty: {project_dir}")
 
     project_dir.parent.mkdir(parents=True, exist_ok=True)
 
@@ -361,15 +502,12 @@ def open_project(project_dir: Path, config: AppConfig) -> None:
     try:
         subprocess.Popen(command)
     except OSError as exc:
-        raise SystemExit(
+        raise CliError(
             f"Project was created at {project_dir}, but opening it with {config.editor_command!r} failed: {exc}"
         ) from exc
 
 
-def main(argv: list[str] | None = None) -> int:
-    parser = build_parser()
-    args = parser.parse_args(argv)
-
+def dispatch_command(args: argparse.Namespace) -> int:
     if args.command == "init-config":
         target_path = args.path if args.path is not None else args.config
         return write_config(target_path, AppConfig(), args.force)
@@ -398,8 +536,21 @@ def main(argv: list[str] | None = None) -> int:
         list_tools(config, args.paths)
         return 0
 
-    parser.error("Unknown command")
-    return 2
+    if args.command == "interactive":
+        run_interactive(args.config)
+        return 0
+
+    raise CliError(f"Unknown command: {args.command}")
+
+
+def main(argv: list[str] | None = None) -> int:
+    parser = build_parser()
+    args = parser.parse_args(argv)
+    try:
+        return dispatch_command(args)
+    except CliError as exc:
+        print(exc, file=sys.stderr)
+        return 1
 
 
 if __name__ == "__main__":
