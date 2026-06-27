@@ -111,6 +111,8 @@ Start an interactive shell with Tab completion for commands, options, and local 
 uv-quick-tool-creator interactive
 ```
 
+Running `uv-quick-tool-creator` with no arguments starts the same interactive shell.
+
 Install a generated local tool project into `uv tool`:
 
 ```bash

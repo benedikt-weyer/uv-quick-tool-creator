@@ -544,8 +544,13 @@ def dispatch_command(args: argparse.Namespace) -> int:
 
 
 def main(argv: list[str] | None = None) -> int:
+    effective_argv = sys.argv[1:] if argv is None else argv
+    if not effective_argv:
+        run_interactive(DEFAULT_CONFIG_PATH)
+        return 0
+
     parser = build_parser()
-    args = parser.parse_args(argv)
+    args = parser.parse_args(effective_argv)
     try:
         return dispatch_command(args)
     except CliError as exc:
