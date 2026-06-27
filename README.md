@@ -28,10 +28,22 @@ This repository also includes a shell installer that finds a Nix-store Python an
 sh ./install-nixos.sh
 ```
 
+After `direnv allow`, the wrapper commands in `script-wrappers/` are also added to `PATH`:
+
+```bash
+install-nixos
+```
+
 To update or reinstall this tool on NixOS:
 
 ```bash
 sh ./update-nixos.sh
+```
+
+With direnv active, you can also run:
+
+```bash
+update-nixos
 ```
 
 To reinstall over an existing tool install with extra `uv tool install` flags:
