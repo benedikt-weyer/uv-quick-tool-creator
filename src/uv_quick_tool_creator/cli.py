@@ -128,6 +128,51 @@ def build_parser() -> argparse.ArgumentParser:
         help="Create the project without opening it in the configured editor.",
     )
 
+    install = subparsers.add_parser("install", help="Install a generated tool project with uv.")
+    install.add_argument("name", help="Tool name to install.")
+    install.add_argument(
+        "--path",
+        type=Path,
+        default=None,
+        help="Project directory to install from. Defaults to tools_directory/name.",
+    )
+    install.add_argument(
+        "--editable",
+        action="store_true",
+        help="Install the tool in editable mode.",
+    )
+    install.add_argument(
+        "--force",
+        action="store_true",
+        help="Overwrite an existing tool installation.",
+    )
+
+    update = subparsers.add_parser("update", help="Reinstall a generated tool project from its local source.")
+    update.add_argument("name", help="Tool name to update.")
+    update.add_argument(
+        "--path",
+        type=Path,
+        default=None,
+        help="Project directory to update from. Defaults to tools_directory/name.",
+    )
+    update.add_argument(
+        "--editable",
+        action="store_true",
+        help="Reinstall the tool in editable mode.",
+    )
+
+    edit = subparsers.add_parser("edit", help="Open an existing tool project in the configured editor.")
+    edit.add_argument("name", help="Tool name to open.")
+    edit.add_argument(
+        "--path",
+        type=Path,
+        default=None,
+        help="Project directory to open. Defaults to tools_directory/name.",
+    )
+
+    uninstall = subparsers.add_parser("uninstall", help="Uninstall a tool from uv.")
+    uninstall.add_argument("name", help="Tool name to uninstall.")
+
     return parser
 
 
@@ -160,8 +205,30 @@ def write_config(path: Path, config: AppConfig, force: bool) -> int:
     return 0
 
 
+def resolve_project_dir(name: str, path: Path | None, config: AppConfig) -> Path:
+    if path is not None:
+        return path.expanduser()
+    return config.tools_directory / name
+
+
+def ensure_project_dir(project_dir: Path) -> None:
+    if not project_dir.exists():
+        raise SystemExit(f"Project directory does not exist: {project_dir}")
+    if not project_dir.is_dir():
+        raise SystemExit(f"Project path is not a directory: {project_dir}")
+    if not (project_dir / "pyproject.toml").exists():
+        raise SystemExit(f"Project directory does not contain pyproject.toml: {project_dir}")
+
+
+def run_command(command: list[str]) -> None:
+    try:
+        subprocess.run(command, check=True)
+    except subprocess.CalledProcessError as exc:
+        raise SystemExit(exc.returncode) from exc
+
+
 def create_project(name: str, description: str, path: Path | None, config: AppConfig, open_in_editor: bool) -> int:
-    project_dir = (path.expanduser() if path is not None else config.tools_directory / name)
+    project_dir = resolve_project_dir(name, path, config)
 
     if project_dir.exists() and any(project_dir.iterdir()):
         raise SystemExit(f"Target directory already exists and is not empty: {project_dir}")
@@ -189,10 +256,7 @@ def create_project(name: str, description: str, path: Path | None, config: AppCo
         command.extend(["--python", config.python])
     command.append(str(project_dir))
 
-    try:
-        subprocess.run(command, check=True)
-    except subprocess.CalledProcessError as exc:
-        raise SystemExit(exc.returncode) from exc
+    run_command(command)
 
     write_flake(project_dir, name)
     write_envrc(project_dir)
@@ -203,6 +267,40 @@ def create_project(name: str, description: str, path: Path | None, config: AppCo
         open_project(project_dir, config)
         print(f"Opened {project_dir} with {config.editor_command}")
 
+    return 0
+
+
+def install_tool(name: str, path: Path | None, config: AppConfig, editable: bool, force: bool, reinstall: bool) -> int:
+    project_dir = resolve_project_dir(name, path, config)
+    ensure_project_dir(project_dir)
+
+    command = ["uv", "tool", "install", "--python", sys.executable]
+    if editable:
+        command.append("--editable")
+    if force:
+        command.append("--force")
+    if reinstall:
+        command.append("--reinstall")
+    command.append(str(project_dir))
+
+    run_command(command)
+
+    action = "Updated" if reinstall else "Installed"
+    print(f"{action} {name} from {project_dir}")
+    return 0
+
+
+def edit_tool(name: str, path: Path | None, config: AppConfig) -> int:
+    project_dir = resolve_project_dir(name, path, config)
+    ensure_project_dir(project_dir)
+    open_project(project_dir, config)
+    print(f"Opened {project_dir} with {config.editor_command}")
+    return 0
+
+
+def uninstall_tool(name: str) -> int:
+    run_command(["uv", "tool", "uninstall", name])
+    print(f"Uninstalled {name}")
     return 0
 
 
@@ -237,6 +335,21 @@ def main(argv: list[str] | None = None) -> int:
     if args.command == "create":
         config = load_config(args.config)
         return create_project(args.name, args.description, args.path, config, not args.no_open)
+
+    if args.command == "install":
+        config = load_config(args.config)
+        return install_tool(args.name, args.path, config, args.editable, args.force, False)
+
+    if args.command == "update":
+        config = load_config(args.config)
+        return install_tool(args.name, args.path, config, args.editable, False, True)
+
+    if args.command == "edit":
+        config = load_config(args.config)
+        return edit_tool(args.name, args.path, config)
+
+    if args.command == "uninstall":
+        return uninstall_tool(args.name)
 
     parser.error("Unknown command")
     return 2

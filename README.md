@@ -87,6 +87,36 @@ Create a project without opening an editor:
 uv-quick-tool-creator create my-new-tool --no-open
 ```
 
+Install a generated local tool project into `uv tool`:
+
+```bash
+uv-quick-tool-creator install my-new-tool
+```
+
+Install it in editable mode:
+
+```bash
+uv-quick-tool-creator install my-new-tool --editable
+```
+
+Update an installed tool from the local project source:
+
+```bash
+uv-quick-tool-creator update my-new-tool
+```
+
+Open an existing tool project in the configured editor:
+
+```bash
+uv-quick-tool-creator edit my-new-tool
+```
+
+Uninstall a tool from `uv tool` without deleting its project directory:
+
+```bash
+uv-quick-tool-creator uninstall my-new-tool
+```
+
 The generated project is created with `uv init --package --app --no-workspace`, includes an installable script entry from `uv init`, and also gets:
 
 ```text
