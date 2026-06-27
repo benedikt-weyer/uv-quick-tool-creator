@@ -28,10 +28,16 @@ This repository also includes a shell installer that finds a Nix-store Python an
 sh ./install-nixos.sh
 ```
 
-To reinstall over an existing tool install:
+To update or reinstall this tool on NixOS:
 
 ```bash
-sh ./install-nixos.sh --force
+sh ./update-nixos.sh
+```
+
+To reinstall over an existing tool install with extra `uv tool install` flags:
+
+```bash
+sh ./update-nixos.sh --editable
 ```
 
 If you want that behavior globally for tool installs, you can also use:
