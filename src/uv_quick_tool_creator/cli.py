@@ -173,6 +173,13 @@ def build_parser() -> argparse.ArgumentParser:
     uninstall = subparsers.add_parser("uninstall", help="Uninstall a tool from uv.")
     uninstall.add_argument("name", help="Tool name to uninstall.")
 
+    list_tools = subparsers.add_parser("list", help="List generated tool projects in the configured tools directory.")
+    list_tools.add_argument(
+        "--paths",
+        action="store_true",
+        help="Show the project path for each tool.",
+    )
+
     return parser
 
 
@@ -225,6 +232,41 @@ def run_command(command: list[str]) -> None:
         subprocess.run(command, check=True)
     except subprocess.CalledProcessError as exc:
         raise SystemExit(exc.returncode) from exc
+
+
+def get_installed_tool_names() -> set[str]:
+    result = subprocess.run(["uv", "tool", "list"], check=False, capture_output=True, text=True)
+    installed_tools: set[str] = set()
+    for line in result.stdout.splitlines():
+        stripped = line.strip()
+        if not stripped or stripped.startswith("-") or stripped.startswith("warning:"):
+            continue
+        installed_tools.add(stripped.split()[0])
+    return installed_tools
+
+
+def list_tools(config: AppConfig, show_paths: bool) -> None:
+    tools_root = config.tools_directory
+    if not tools_root.exists():
+        print(f"No tools found in {tools_root}")
+        return
+
+    installed_tools = get_installed_tool_names()
+    tool_dirs = sorted(
+        path for path in tools_root.iterdir() if path.is_dir() and (path / "pyproject.toml").exists()
+    )
+
+    if not tool_dirs:
+        print(f"No tools found in {tools_root}")
+        return
+
+    for project_dir in tool_dirs:
+        line = project_dir.name
+        if project_dir.name in installed_tools:
+            line += " (installed)"
+        if show_paths:
+            line += f"\t{project_dir}"
+        print(line)
 
 
 def create_project(name: str, description: str, path: Path | None, config: AppConfig, open_in_editor: bool) -> int:
@@ -350,6 +392,11 @@ def main(argv: list[str] | None = None) -> int:
 
     if args.command == "uninstall":
         return uninstall_tool(args.name)
+
+    if args.command == "list":
+        config = load_config(args.config)
+        list_tools(config, args.paths)
+        return 0
 
     parser.error("Unknown command")
     return 2

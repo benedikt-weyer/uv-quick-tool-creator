@@ -111,6 +111,18 @@ Install a generated local tool project into `uv tool`:
 uv-quick-tool-creator install my-new-tool
 ```
 
+List generated tool projects in your configured tools directory:
+
+```bash
+uv-quick-tool-creator list
+```
+
+Show each project path as well:
+
+```bash
+uv-quick-tool-creator list --paths
+```
+
 Install it in editable mode:
 
 ```bash
