@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import json
 import shlex
 import subprocess
 import sys
@@ -14,6 +15,9 @@ import yaml
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_serializer, field_validator
 
 DEFAULT_CONFIG_PATH = Path.home() / ".config" / "uv-quick-tool-creator" / "config.yaml"
+PYPROJECT_FILENAME = "pyproject.toml"
+CLI_TEMPLATE_PATH = Path(__file__).with_name("cli_template.py")
+MAIN_TEMPLATE_PATH = Path(__file__).with_name("main_template.py")
 
 FLAKE_TEMPLATE = """{
     description = \"Development shell for __PROJECT_NAME__\";
@@ -288,8 +292,8 @@ def ensure_project_dir(project_dir: Path) -> None:
         raise CliError(f"Project directory does not exist: {project_dir}")
     if not project_dir.is_dir():
         raise CliError(f"Project path is not a directory: {project_dir}")
-    if not (project_dir / "pyproject.toml").exists():
-        raise CliError(f"Project directory does not contain pyproject.toml: {project_dir}")
+    if not (project_dir / PYPROJECT_FILENAME).exists():
+        raise CliError(f"Project directory does not contain {PYPROJECT_FILENAME}: {project_dir}")
 
 
 def run_command(command: list[str]) -> None:
@@ -305,7 +309,7 @@ def get_local_tool_names(config: AppConfig) -> list[str]:
         return []
 
     return sorted(
-        path.name for path in tools_root.iterdir() if path.is_dir() and (path / "pyproject.toml").exists()
+        path.name for path in tools_root.iterdir() if path.is_dir() and (path / PYPROJECT_FILENAME).exists()
     )
 
 
@@ -433,16 +437,17 @@ def create_project(name: str, description: str, path: Path | None, config: AppCo
         "--name",
         name,
     ]
-    if description:
-        command.extend(["--description", description])
     if config.python:
         command.extend(["--python", config.python])
     command.append(str(project_dir))
 
     run_command(command)
+    if description:
+        write_project_description(project_dir, description)
 
     write_flake(project_dir, name)
     write_envrc(project_dir)
+    write_cli_scaffold(project_dir, name, description)
 
     print(f"Created {name} at {project_dir}")
 
@@ -495,6 +500,50 @@ def write_flake(project_dir: Path, project_name: str) -> None:
 def write_envrc(project_dir: Path) -> None:
     envrc_path = project_dir / ".envrc"
     envrc_path.write_text(ENVRC_CONTENT, encoding="utf-8")
+
+
+def write_project_description(project_dir: Path, description: str) -> None:
+    pyproject_path = project_dir / PYPROJECT_FILENAME
+    lines = pyproject_path.read_text(encoding="utf-8").splitlines()
+    replacement = f"description = {json.dumps(description)}"
+
+    for index, line in enumerate(lines):
+        if line.startswith("description = "):
+            lines[index] = replacement
+            pyproject_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+            return
+
+    raise CliError(f"Could not find a project description line in {pyproject_path}")
+
+
+def write_cli_scaffold(project_dir: Path, script_name: str, description: str) -> None:
+    package_dir = get_generated_package_dir(project_dir)
+    resolved_description = description or f"CLI for {script_name}."
+    cli_template = CLI_TEMPLATE_PATH.read_text(encoding="utf-8")
+    main_template = MAIN_TEMPLATE_PATH.read_text(encoding="utf-8")
+    replacements = {
+        "__SCRIPT_NAME__": repr(script_name),
+        "__DESCRIPTION__": repr(resolved_description),
+    }
+
+    (package_dir / "cli.py").write_text(render_template(cli_template, replacements), encoding="utf-8")
+    (package_dir / "main.py").write_text(render_template(main_template, replacements), encoding="utf-8")
+    (package_dir / "__init__.py").write_text("from .main import main\n", encoding="utf-8")
+
+
+def get_generated_package_dir(project_dir: Path) -> Path:
+    src_dir = project_dir / "src"
+    package_dirs = [path for path in src_dir.iterdir() if path.is_dir()]
+    if len(package_dirs) != 1:
+        raise CliError(f"Expected exactly one generated package directory in {src_dir}, found {len(package_dirs)}")
+    return package_dirs[0]
+
+
+def render_template(template: str, replacements: dict[str, str]) -> str:
+    rendered = template
+    for old, new in replacements.items():
+        rendered = rendered.replace(old, new)
+    return rendered
 
 
 def open_project(project_dir: Path, config: AppConfig) -> None:

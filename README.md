@@ -160,6 +160,10 @@ The generated project is created with `uv init --package --app --no-workspace`, 
 ```text
 flake.nix
 .envrc
+src/<package>/cli.py
+src/<package>/main.py
 ```
 
 The `.envrc` uses `use flake path:./`, which works cleanly with uncommitted local flakes.
+
+The generated `src/<package>/cli.py` is a starter scaffold copied from this repository. It exposes a `CommandRegistryCli` class for registering commands, and the generated `src/<package>/main.py` wires that class into a separate `main()` entrypoint with starter `health` and `echo` commands.
