@@ -26,7 +26,7 @@ FLAKE_TEMPLATE = """{
     nixpkgs.url = \"github:NixOS/nixpkgs/nixos-unstable\";
   };
 
-  outputs = {{ nixpkgs, ... }}:
+    outputs = { nixpkgs, ... }:
     let
       systems = [
         \"x86_64-linux\"
@@ -35,21 +35,21 @@ FLAKE_TEMPLATE = """{
         \"aarch64-darwin\"
       ];
       forAllSystems = f:
-        nixpkgs.lib.genAttrs systems (system: f nixpkgs.legacyPackages.${{system}});
+                nixpkgs.lib.genAttrs systems (system: f nixpkgs.legacyPackages.${system});
     in
-    {{
-      devShells = forAllSystems (pkgs: {{
-        default = pkgs.mkShell {{
+        {
+            devShells = forAllSystems (pkgs: {
+                default = pkgs.mkShell {
           packages = with pkgs; [
             python3
             uv
           ];
 
           UV_PYTHON_DOWNLOADS = \"never\";
-        }};
-      }});
-    }};
-}}
+                };
+            });
+        };
+}
 """
 
 ENVRC_CONTENT = "use flake path:./\n"
